@@ -5,30 +5,30 @@ namespace Library;
 
 class Toolkit {
 
+   private static $instance;
+   private static $count = 0;
 	private $name;
-	private $defaultName; // If user not provided a tag name ar if it is invalid use this.
+	private $defaultName; // If user not provided a tag name or if it is invalid use this.
 	private $attributeList;
-	private static $instance;
-	private $tagContent;
-	private $thisContent;
-	private $childContent;
-	private $parentContent;
+	private $tagContentBeforeC;
+	private $tagContentAfterC;
 	private $grandParent;
 	private $parent;
-	private $child;
+	private $children;
 	private $mainAttributes = ['class', 'id', 'style', 'href'];
 	private $selfClosed = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'];
+	private $validHtmlTagNames = [];
  
 	public function __construct(string $name) {
 		$this->name = $name;
 		$this->attributesList = array();
 		$this->grandParent = null;
 		$this->parent = null;
-		$this->childContent = null;
+		$this->children = array();
 	}
 
 	public function __call($name, $value) {
-
+		return  "You have called $name";
 	}
 
 	public static function __callStatic($name, $value) {
@@ -40,7 +40,6 @@ class Toolkit {
 	}
 
 	public static function createElement(string $name) : object {
-		// self::$instance = new static($name);   php late static binding
 		self::$instance = new self($name);
 		return self::$instance;
 	}
@@ -48,6 +47,7 @@ class Toolkit {
 	private function validateTagName(string $name) : string {//If user enter empty'' that error will catch when validating final html
 		//Tag name should be a html tag name. Custom tag names should not be accepted.
 		$name = preg_replace('/[^a-z]/', '', trim(strtolower($name)));
+		//Check that name available within global html tag names array
 
 		return $name;		
 	}
@@ -123,48 +123,53 @@ class Toolkit {
 		return htmlspecialchars($text);
 	}
 
-	public function text(string $text) {
+	// You should be able to set styles to the given text such as bold,italic,underline,color,background color
+	public function text(string $text, bool $textAfterChildren = false) {
 		$text = $this->validateXSS($text);
-		$parent = &$this->parent;
-		$tagContent = &$this->tagContent;
-		$tagContent .= $text . ' ';
+
+		if ($textAfterChildren) {
+         $tagContent = &$this->tagContentAfterC;
+         $tagContent .= $text;
+      } else {
+         $tagContent = &$this->tagContentBeforeC;
+         $tagContent .= $text;
+      }
 
 		return $this;
 	}
 
 	/**
 	 * Create a new html element as a child element and add to the current html element.
+	 * 
 	 * @param  string $name [Child element name]
 	 * @return object [Child html element object]
 	 */
 	public function child(string $name) : object {
 		$child = new self($name);
+		Toolkit::$count ++;
+      $this->children[(string)Toolkit::$count] = $child;
 		$child->parent = $this;
 		if ($this->grandParent === null) {
 			$child->grandParent = &$this;
 		} else {
 		  	$child->grandParent = &$this->grandParent;
 		}
-		$this->child = $child;
 
 		return $child;
-	}
-
-	public function childOutput() {
-		$parent = $this->parent;
-		$grandParent = $this->grandParent;
-		$child = $this->output();
-		$parent->tagContent .= $child;
-
-		return $this;
 	}
 
 	public function getParent() : object {
 		return $this->parent;
 	}
 
-	public function getChild() {
-		return $this->child;
+	public function getChild(int $child) : object {
+	   $child = (string)$child;
+	   $children = $this->children;
+	   if (array_key_exists($child, $children)) {
+         return $children[$child];
+      } else {
+	      var_dump('This element doesn\'t have such number of child.');die();
+      }
 	}
 
 	public function getTop() {
@@ -173,6 +178,7 @@ class Toolkit {
 
 	/**
 	 * Add previously created child element as a child to the current html element.
+	 * 
 	 * @param string $child [Child element name]
 	 * @return object [Current html element object]
 	 */
@@ -187,8 +193,12 @@ class Toolkit {
 		$attributeList = $this->attributeList;
 		$tagName = $this->validateTagName($this->name);
 		$attributeList = $this->generateAttributeString($attributeList);
-		$content = $this->tagContent;
+		$beforeContent = $this->tagContentBeforeC;
+		$afterContent = $this->tagContentAfterC;
+		$children = $this->children;
 		$output = '';
+      $childOutput = '';
+
 		if ($tagName != null) {	
 			$output	.= '<' . $tagName . ' ';
 			$output .= $attributeList;
@@ -196,7 +206,14 @@ class Toolkit {
 				$output .= '/>';
 			} else {
 				$output .= '>';
-				$output .= $content;
+            $output .= $beforeContent;
+				if (!empty($children)) {
+               foreach ($children as $key => $child) {
+                  $childOutput .= $child->output();
+               }
+            }
+            $output .= $childOutput;
+            $output .= $afterContent;
 				$output .= '</' . $tagName . '>';
 			}
 			return $output;
